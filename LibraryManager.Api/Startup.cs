@@ -1,4 +1,5 @@
-﻿using LibraryManager.Api.Entities;
+﻿using System.Linq;
+using LibraryManager.Api.Entities;
 using LibraryManager.Api.Helpers;
 using LibraryManager.Api.Services;
 using Microsoft.AspNetCore.Builder;
@@ -50,6 +51,14 @@ namespace LibraryManager.Api
                 setupAction.ReturnHttpNotAcceptable = true;
                 setupAction.OutputFormatters.Add(new XmlDataContractSerializerOutputFormatter()); // supporting application/xml content-type
                 setupAction.InputFormatters.Add(new XmlDataContractSerializerInputFormatter());
+
+                var jsonOutputFormatter = setupAction.OutputFormatters
+                    .OfType<JsonOutputFormatter>().FirstOrDefault();
+
+                if (jsonOutputFormatter != null)
+                {
+                    jsonOutputFormatter.SupportedMediaTypes.Add(CustomRequestHeaders.CUSTOM_HATEOAS_MEDIA_TYPE);
+                }
             })
             .AddJsonOptions(options => 
             {
