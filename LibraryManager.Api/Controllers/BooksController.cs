@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using LibraryManager.Api.Models;
 using LibraryManager.Api.Entities;
 using Microsoft.AspNetCore.JsonPatch;
+using System.Linq;
 
 namespace LibraryManager.Api.Controllers
 {
@@ -13,13 +14,15 @@ namespace LibraryManager.Api.Controllers
     public class BooksController : ControllerBase
     {
         private readonly ILibraryRepository _libraryRepository;
+        private readonly IUrlHelper _urlHelper;
 
-        public BooksController(ILibraryRepository libraryRepository)
+        public BooksController(ILibraryRepository libraryRepository, IUrlHelper urlHelper)
         {
             _libraryRepository = libraryRepository;
+            _urlHelper = urlHelper;
         }
 
-        [HttpGet]
+        [HttpGet(Name = "GetBooksForAuthor")]
         public IActionResult GetBooksForAuthor(Guid authorId)
         {
             if (!_libraryRepository.AuthorExists(authorId))
@@ -31,7 +34,15 @@ namespace LibraryManager.Api.Controllers
 
             var booksForAuthor = AutoMapper.Mapper.Map<IEnumerable<BookDto>>(booksForAuthorFromRepo);
 
-            return Ok(booksForAuthor); 
+            booksForAuthor = booksForAuthor.Select(book =>
+            {
+                book = CreateLinksForBook(book);
+                return book;
+            });
+
+            var wrapper = new LinkedCollectionResourceWrapperDto<BookDto>(booksForAuthor);
+
+            return Ok(CreateLinksForBooks(wrapper)); 
         }
 
         [HttpGet("{bookId}", Name = "GetBookForAuthor")]
@@ -51,10 +62,10 @@ namespace LibraryManager.Api.Controllers
 
             var bookForAuthor = AutoMapper.Mapper.Map<BookDto>(bookForAuthorFromRepo);
 
-            return Ok(bookForAuthor);
+            return Ok(CreateLinksForBook(bookForAuthor));
         }
 
-        [HttpPost]
+        [HttpPost(Name = "CreateBookForAuthor")]
         public IActionResult CreateBookForAuthor(Guid authorId, [FromBody] BookCreateDto book)
         {
             if (book == null)
@@ -64,10 +75,7 @@ namespace LibraryManager.Api.Controllers
 
             if (book.Description == book.Title)
             {
-                ModelState.AddModelError(
-                    nameof(BookCreateDto),
-                    "A book's description cannot be the same as the title!"
-                );
+                ModelState.AddModelError(nameof(BookCreateDto), "A book's description cannot be the same as the title!");
             }
 
             if (!ModelState.IsValid)
@@ -91,14 +99,16 @@ namespace LibraryManager.Api.Controllers
 
             var bookToReturn = AutoMapper.Mapper.Map<BookDto>(bookEntity);
 
-            return CreatedAtRoute(
-                "GetBookForAuthor",
-                new { authorId  = authorId, bookId = bookToReturn.Id },
-                bookToReturn
-            );
+            return CreatedAtRoute("GetBookForAuthor",
+            new
+            { 
+                authorId  = authorId,
+                bookId = bookToReturn.Id
+            },
+            CreateLinksForBook(bookToReturn));
         }
 
-        [HttpDelete("{id}")]
+        [HttpDelete("{id}", Name = "DeleteBookForAuthor")]
         public IActionResult DeleteBookForAuthor(Guid authorId, Guid id)
         {
             if (!_libraryRepository.AuthorExists(authorId))
@@ -123,7 +133,7 @@ namespace LibraryManager.Api.Controllers
             return NoContent();
         }
 
-        [HttpPut("{id}")]
+        [HttpPut("{id}" , Name = "UpdateBookForAuthor")]
         public IActionResult UpdateBookForAuthor(Guid authorId, Guid id, [FromBody] BookUpdateDto book)
         {
             if (book == null)
@@ -133,10 +143,7 @@ namespace LibraryManager.Api.Controllers
 
             if (book.Description == book.Title)
             {
-                ModelState.AddModelError(
-                    nameof(BookUpdateDto),
-                    "A book's description cannot be the same as the title!"
-                );
+                ModelState.AddModelError(nameof(BookUpdateDto), "A book's description cannot be the same as the title!");
             }
 
             if (!ModelState.IsValid)
@@ -166,11 +173,13 @@ namespace LibraryManager.Api.Controllers
 
                 var bookToReturn = AutoMapper.Mapper.Map<BookDto>(bookToAdd);
 
-                return CreatedAtRoute(
-                    "GetBookForAuthor",
-                    new { authorId  = authorId, bookId = bookToReturn.Id },
-                    bookToReturn
-                );
+                return CreatedAtRoute("GetBookForAuthor",
+                    new
+                    {
+                        authorId  = authorId,
+                        bookId = bookToReturn.Id
+                    },
+                    bookToReturn);
             }
 
             AutoMapper.Mapper.Map(book, bookForAuthorFromRepo);
@@ -185,7 +194,7 @@ namespace LibraryManager.Api.Controllers
             return NoContent();
         }
 
-        [HttpPatch("{id}")]
+        [HttpPatch("{id}", Name = "PartiallyUpdateBookForAuthor")]
         public IActionResult PartiallyUpdateBookForAuthor(Guid authorId, Guid id,
         [FromBody] JsonPatchDocument<BookUpdateDto> patchDoc)
         {
@@ -208,10 +217,7 @@ namespace LibraryManager.Api.Controllers
 
                 if (bookDto.Description == bookDto.Title)
                 {
-                    ModelState.AddModelError(
-                        nameof(BookUpdateDto),
-                        "A book's description cannot be the same as the title!"
-                    );
+                    ModelState.AddModelError(nameof(BookUpdateDto), "A book's description cannot be the same as the title!");
                 }
 
                 TryValidateModel(bookDto);
@@ -233,11 +239,13 @@ namespace LibraryManager.Api.Controllers
 
                 var bookToReturn = AutoMapper.Mapper.Map<BookDto>(bookToAdd);
 
-                return CreatedAtRoute(
-                    "GetBookForAuthor",
-                    new { authorId  = authorId, bookId = bookToReturn.Id },
-                    bookToReturn
-                );
+                return CreatedAtRoute( "GetBookForAuthor",
+                    new
+                    {
+                        authorId  = authorId,
+                        bookId = bookToReturn.Id
+                    },
+                    bookToReturn);
             }
 
             var bookToPatch = AutoMapper.Mapper.Map<BookUpdateDto>(bookForAuthorFromRepo);
@@ -246,10 +254,7 @@ namespace LibraryManager.Api.Controllers
 
             if (bookToPatch.Description == bookToPatch.Title)
             {
-                ModelState.AddModelError(
-                    nameof(BookUpdateDto),
-                    "A book's description cannot be the same as the title!"
-                );
+                ModelState.AddModelError(nameof(BookUpdateDto), "A book's description cannot be the same as the title!");
             }
 
             TryValidateModel(bookToPatch);
@@ -270,5 +275,27 @@ namespace LibraryManager.Api.Controllers
 
             return NoContent();
         }
+
+        private BookDto CreateLinksForBook(BookDto book)
+        {
+            book.Links.Add(new LinkDto(_urlHelper.Link("GetBookForAuthor", new { bookId = book.Id }), "self", "GET"));
+
+            book.Links.Add(new LinkDto(_urlHelper.Link("DeleteBookForAuthor", new { id = book.Id }), "delete_book", "DELETE"));
+
+            book.Links.Add(new LinkDto(_urlHelper.Link("UpdateBookForAuthor", new { id = book.Id }), "update_book", "PUT"));
+
+            book.Links.Add(new LinkDto(_urlHelper.Link("PartiallyUpdateBookForAuthor", new { id = book.Id }), "partially_update_book", "PATCH"));
+
+            return book;
+        }
+
+        private LinkedCollectionResourceWrapperDto<BookDto> CreateLinksForBooks(
+            LinkedCollectionResourceWrapperDto<BookDto> booksWrapper)
+            {
+                // link to self
+                booksWrapper.Links.Add(new LinkDto(_urlHelper.Link("GetBooksForAuthor", new { }), "self", "GET"));
+
+                return booksWrapper;
+            }
     }
 }
